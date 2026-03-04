@@ -1,0 +1,137 @@
+# GPT Model Mimarisi: 5 Bölümlük Yolculuğun Anatomisi
+
+Geçtiğimiz 5 bölüm boyunca "LLMs-from-scratch" rehberliğinde sıfırdan inşa ettiğimiz GPT modelinin mimari incelenmesi, veri akışı ve fonksiyonel işleyişine dair detaylı analiz aşağıdadır.
+
+---
+
+## 1. Mimariye Genel Bakış (High-Level Architecture)
+
+Aşağıdaki diyagram, girdi metninin Tokenizer'dan girip, Token ve Pozisyon (Positional) gömme (embedding) katmanlarından geçerek Transformer bloklarına ulaşmasını ve nihayetinde bir sonraki kelimeyi (token) nasıl ürettiğini gösterir.
+
+```mermaid
+flowchart TD
+    Girdi[Girdi Metni] --> Tokenizer["Tokenizer (BPE)"]
+    Tokenizer --> TokenIDs["Token ID'leri (B, T)"]
+    TokenIDs --> TokEmb["Token Embedding Katmanı\n(B, T) -> (B, T, D)"]
+    TokenIDs --> PosEmb["Positional Embedding Katmanı\n(B, T) -> (B, T, D)"]
+    TokEmb --> AddEmb(("Pozisyon +\nToken (Toplama)"))
+    PosEmb --> AddEmb
+    AddEmb --> DropEmb["Dropout Katmanı"]
+    
+    DropEmb --> Block1["Transformer Bloğu 1"]
+    Block1 --> Block2["Transformer Bloğu 2...N"]
+    
+    Block2 --> FinalLN["Final Layer Normalization"]
+    FinalLN --> LinearOut["Çıktı Katmanı (Linear Head)"]
+    LinearOut --> Logits["Logits\n(B, T, Vocab Size)"]
+    
+    Logits -.-> Softmax["Softmax & Decoding\n(Sıcaklık, K-Örneklemesi)"]
+    Softmax -.-> YeniToken[En Başarılı / Örneklenen Yeni Token]
+```
+
+---
+
+## 2. Transformer Bloğunun İç Yapısı
+
+Dil modellerinin güç merkezi (powerhouse) olan Transformer Block (Transformer Bloğu), çok başlıklı dikkat (Multi-Head Attention) ve İleri Beslemeli Ağlar (Feed Forward Networks) içerir. Ayrıca, öğrenme sürecini hızlandıran ve dengeli tutan Kısa Yol (Shortcut/Residual) bağlantılarına sahiptir.
+
+```mermaid
+flowchart TD
+    Girdi["Girdi x\nŞekil: (B, T, D)"] --> LN1["LayerNorm 1"]
+    Girdi --> Topla1
+    LN1 --> MHA["Masked Multi-Head Attention"]
+    MHA --> Drop1["Dropout"]
+    Drop1 --> Topla1(("Kısa Yol 1\n(Residual Connection)"))
+    
+    Topla1 --> LN2["LayerNorm 2"]
+    Topla1 --> Topla2
+    LN2 --> FFN1["İleri Besleme (Linear1)"]
+    FFN1 --> GELU["GELU Aktivasyonu"]
+    GELU --> FFN2["İleri Besleme (Linear2)"]
+    FFN2 --> Drop2["Dropout"]
+    Drop2 --> Topla2(("Kısa Yol 2\n(Residual Connection)"))
+    
+    Topla2 --> Cikti["Çıktı\nŞekil: (B, T, D)"]
+```
+
+---
+
+## 3. Veri Akışı ve Boyut Değişimleri (Tensor Transformations)
+
+Model boyunca tensörlerin (matrislerin) hangi boyutlara dönüştüğü modelin kalbini anlamak için kritiktir. 
+*Not: `B`: Batch Boyutu, `T`: Context/Sequence Uzunluğu, `D`: Embedding Dim, `V`: Sözlük (Vocab) Boyutu.*
+
+| Bileşen / Katman | Geliş Boyutu | Çıkış Boyutu | Açıklama |
+| :--- | :--- | :--- | :--- |
+| **Girdi (Batch)** | [(B, T)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | [(B, T)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | Token ID'lerinden oluşan matris |
+| **Token + Pos Embedding** | [(B, T)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | Token sayısı ile embedding boyutunun haritası çıkarılır (Örn D: 768) |
+| **Q, K, V Projeksiyonu** | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | Dikkat merkezi (LayerNorm üzerinden) için verinin kopyalanarak yönlendirilmesi |
+| **Attention & Maskeleme** | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | Dikkat skoru matrisi hesaplanır ve ardından Maskeleme, Dropout, Softmax işlemlerine sokulur |
+| **İleri Besleme Katmanı** | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | [(B, T, 4*D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | *Linear 1*: Nitelikleri genişletmek için boyut 4 katına çıkarılır |
+| **İleri Besleme Daralması** | [(B, T, 4*D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | *Linear 2*: Öğrenilen matris orijinal boyuta (`D`) geri indirgenir |
+| **Çıktı Başlığı** | [(B, T, D)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | [(B, T, V)](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) | Nihai katman (`Linear Head`), her okuduğu kelime için sözlük uzunluğunda (`V`: 50257) tahmini olasılıkları (Logits) basar. |
+
+---
+
+## 4. Temel Yöntem ve Fonksiyonların Detaylı Analizi
+
+> [!NOTE]
+> Sıfırdan oluşturulan mimarinin iç düzeni ([GPTModel](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/05_mla/gpt_with_kv_mla.py#202-259) sınıfı tasarımı)
+
+### 4.1 Positional & Token Embedding (`nn.Embedding`)
+İki farklı "Gömme (Embedding)" tablosu vardır:
+1.  **Token Embedding:** Kelimenin "ne" olduğunu öğrenir. Anlam bilgisi içerir.
+2.  **Positional Embedding:** Kelimenin metindeki "sırasını" taşır. 
+Tensörler toplanarak (`x = tok_emb + pos_emb`) anlam & sıralama bütünlüğü tek bir veri bloğu haline getirilir.
+
+### 4.2 Causal Masked Multi-Head Attention (Nedensel Çok Başlıklı Dikkat)
+GPT, yalnızca geçmişi görerek geleceği tahmin etmeye çalışan yapıda bir **Decoder** mimarisidir.
+
+Aşağıdaki diyagramda bir MHA (Multi-Head Attention) modülünün içinde verinin $Q, K, V$ başlıklarına nasıl ayrıldığı ve birleştirildiği gösterilmiştir.
+
+```mermaid
+flowchart TD
+    Girdi["Girdi x\n(B, T, D)"] --> WQ["W_q (Sorgu) Linear"]
+    Girdi --> WK["W_k (Anahtar) Linear"]
+    Girdi --> WV["W_v (Değer) Linear"]
+    
+    WQ --> Q["Q Matrisi\n(B, T, D)"]
+    WK --> K["K Matrisi\n(B, T, D)"]
+    WV --> V["V Matrisi\n(B, T, D)"]
+    
+    Q --> SplitQ["N Adet Başlığa (Head) Bölme\nÖrn: (B, Num_Heads, T, Head_Dim)"]
+    K --> SplitK["N Adet Başlığa (Head) Bölme"]
+    V --> SplitV["N Adet Başlığa (Head) Bölme"]
+    
+    SplitQ --> MatMul["Matris Çarpımı (Q × K^T)"]
+    SplitK --> MatMul
+    
+    MatMul --> Scale["Ölçekleme\n(1 / Kök(Head_Dim))"]
+    Scale --> Mask["Causal (İleri) Maskeleme\n(Gelecek Tokenleri -Sonsuz Yap)"]
+    Mask --> Softmax["Softmax\n(Skorları Olasılığa Çevir)"]
+    Softmax --> Dropout["Attention Dropout"]
+    
+    Dropout --> AttentionWeights["Dikkat Ağırlıkları"]
+    SplitV --> MatMul2["Matris Çarpımı\n(AttentionWeights × V)"]
+    AttentionWeights --> MatMul2
+    
+    MatMul2 --> Concat["Başlıkları Geri Birleştirme (Concat)"]
+    Concat --> OutProj["Çıkış İzdüşümü (out_proj Linear)\n(B, T, D)"]
+```
+
+*   **Ağırlıklar (Q, K, V):** Her başlık, öğrenmesi gereken `W_q` (Sorgu), `W_k` (Anahtar) ve `W_v` (Puan/Değer) projeksiyonları yapar. (Kısaca bir kelime, diğer kelimelere anahtarlarıyla sorular sorup uyuşan değerleri toplar).
+*   **Sebep-Sonuç Maskesi (Causal Masking):** Üçgen şeklinde bir matristir. Gelecekteki kelimeleri $-\infty$'a eşitler. Böylece softmax sırasında bu olasılıklar 0'a iner ve model henüz üretemediği "gelecekten" bilgi aşıramaz.
+
+### 4.3 Transformer Bloğu ve Kısa Yollar (*Residual Connections*)
+*   **LayerNorm:** Eğitim süresince patlayan varyansı ve ortalamayı hizalayıp öğrenmeyi sağlıklı ve pürüzsüz tutar. Transformer bloklarında işlem *öncesi* (Pre-LayerNorm) çalışır.
+*   **Kısa Yollar:** `x = x + attention(x)` ve `x = x + ffn(x)` işlemi uygulanır. Bilgiler sadece kapalı işlemlerden ibaret kalmaz ve ilk girdi verileri blok boyunca sağlam kalmayı başarır. (Derin ağlarda gradyan azalmasını önler).
+
+### 4.4 Feed-Forward Network & GELU
+*   **İleri Besleme Ağları:** Attention katmanından sonra toplanan bilginin sindirilmesini ve harmanlanmasını sağlar. İki farklı `Linear` (tam bağlı) katmandan oluşur ve tensör kalınlığını 4 kat büyütüp geri küçültür.
+*   **GELU (Gaussian Error Linear Unit):** Standart `ReLu` keskin hatlara sahiptir (Değerler aniden 0 olur). [GELU](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/03_kv-cache/gpt_with_kv_cache_optimized.py#146-155) ise kavisli ve yumuşatılmış bir fonksiyon olduğu için karmaşık verilerde GPT ve BERT gibi modeller tarafından başarıyla kullanılır.
+
+### 4.5 Çözümleme (Decoding & Generation)
+Ağın ürettiği son çıktı, işlenmemiş skorlardan oluşan "Logits" tensörüdür. 
+*   **Softmax:** Ham skorları 0 ve 1 arasında değişen net olasılıklara çevirir.
+*   **Temperature (Sıcaklık Ölçeklendirme):** `T < 1.0` değerleri, modelin yalnızca en olası mantıklı kelimeye yönelmesini (Confidence), `T > 1.0` ise daha farklı, yaratıcı ancak riskli kelimeleri denemesini sağlar.
+*   **Top-K Sınırı:** En olası olmayan düşük gürültülü (anlamsız) kelimeleri tamamen iptal eder. Model sadece "en mantıklı ilk 50" kelime arasından olasılığına göre kura (`multinomial`) çeker. Böylece yaratıcılık sırasında oluşan o "çıldırma" ihtimali önlenmiş olur.
