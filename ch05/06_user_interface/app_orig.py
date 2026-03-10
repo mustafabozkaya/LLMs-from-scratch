@@ -5,7 +5,7 @@
 
 import tiktoken
 import torch
-import chainlit
+import chainlit # this is a library that allows us to create a web interface for our model  
 
 # For llms_from_scratch installation instructions, see:
 # https://github.com/rasbt/LLMs-from-scratch/tree/main/pkg
