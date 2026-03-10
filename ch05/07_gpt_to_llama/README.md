@@ -1,7 +1,5 @@
 # Converting GPT to Llama
 
-
-
 This folder contains code for converting the GPT implementation from chapter 4 and 5 to Meta AI's Llama architecture in the following recommended reading order:
 
 - [converting-gpt-to-llama2.ipynb](converting-gpt-to-llama2.ipynb): contains code to convert GPT to Llama 2 7B step by step and loads pretrained weights from Meta AI
@@ -10,13 +8,14 @@ This folder contains code for converting the GPT implementation from chapter 4 a
 
 <img src="https://sebastianraschka.com/images/LLMs-from-scratch-images/bonus/gpt-to-llama/gpt-and-all-llamas.webp">
 
-
 &nbsp;
+
 ### Using Llama 3.2 via the `llms-from-scratch` package
 
 For an easy way to use the Llama 3.2 1B and 3B models, you can also use the `llms-from-scratch` PyPI package based on the source code in this repository at [pkg/llms_from_scratch](../../pkg/llms_from_scratch).
 
 &nbsp;
+
 #### 1) Installation
 
 ```bash
@@ -26,6 +25,7 @@ pip install llms_from_scratch blobfile
 (Note that `blobfile` is needed to load the tokenizer.)
 
 &nbsp;
+
 #### 2) Model and text generation settings
 
 Specify which model to use:
@@ -52,6 +52,7 @@ TOP_K = 1
 ```
 
 &nbsp;
+
 #### 3) Weight download and loading
 
 This automatically downloads the weight file based on the model choice above:
@@ -97,6 +98,7 @@ model.to(device)
 ```
 
 &nbsp;
+
 #### 4) Initialize tokenizer
 
 The following code downloads and initializes the tokenizer:
@@ -111,7 +113,7 @@ url = f"https://huggingface.co/rasbt/llama-3.2-from-scratch/resolve/main/{TOKENI
 if not os.path.exists(TOKENIZER_FILE):
     urllib.request.urlretrieve(url, TOKENIZER_FILE)
     print(f"Downloaded to {TOKENIZER_FILE}")
-    
+  
 tokenizer = Llama3Tokenizer("tokenizer.model")
 
 if "instruct" in MODEL_FILE:
@@ -119,6 +121,7 @@ if "instruct" in MODEL_FILE:
 ```
 
 &nbsp;
+
 #### 5) Generating text
 
 Lastly, we can generate text via the following code:
@@ -183,7 +186,8 @@ It's worth noting that the specific diet of llamas can vary depending on factors
 ```
 
 &nbsp;
-#### Pro tip 1: speed up inference with FlashAttention
+
+#### Pro tip 1: speed up inference with FlashAttentionCık, cık. 
 
 Instead of using `Llama3Model`, you can use `Llama3ModelFast` as a drop-in replacement. For more information, I encourage you to inspect the [pkg/llms_from_scratch/llama3.py](../../pkg/llms_from_scratch/llama3.py) code.
 
@@ -197,8 +201,8 @@ The following table shows a performance comparison on an A100:
 | Llama3ModelFast | 54         | 2.91 GB |
 
 &nbsp;
-#### Pro tip 2: speed up inference with compilation
 
+#### Pro tip 2: speed up inference with compilation
 
 For up to a 4× speed-up, replace
 
@@ -213,7 +217,7 @@ model = torch.compile(model)
 model.to(device)
 ```
 
-Note: There is a significant multi-minute upfront cost when compiling, and the speed-up takes effect after the first `generate` call. 
+Note: There is a significant multi-minute upfront cost when compiling, and the speed-up takes effect after the first `generate` call.
 
 The following table shows a performance comparison on an A100 for consequent `generate` calls:
 
@@ -223,6 +227,7 @@ The following table shows a performance comparison on an A100 for consequent `ge
 | Llama3ModelFast | 177        | 3.61 GB |
 
 &nbsp;
+
 #### Pro tip 3: speed up inference with compilation
 
 You can significantly boost inference performance using the KV cache `Llama3Model` drop-in replacement when running the model on a CPU. (See my [Understanding and Coding the KV Cache in LLMs from Scratch](https://magazine.sebastianraschka.com/p/coding-the-kv-cache-in-llms) article to learn more about KV caches.)

@@ -1,0 +1,38 @@
+# Bölüm 4 LLM Optimizasyon Teknikleri ve Qwen 3.5 Mimarisi Karşılaştırması
+
+Bu analiz, [MODERN_LLM_OPTIMIZASYON_TEKNIKLERI.md](file:///c:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch04/MODERN_LLM_OPTIMIZASYON_TEKNIKLERI.md) (Bölüm 4) dosyasında anlatılan genel optimizasyon yöntemlerinin, Qwen 3.5 0.8B (Bölüm 5) özelinde nasıl somutlaştığını ve harmanlandığını incelemektedir.
+
+## 1. KV-Cache (Temel Problem) ve Qwen 3.5'in Çözümü
+**Bölüm 4 Teori:** MHA'da (Tam Dikkat) her üretilen kelime için geçmiş $K$ ve $V$ matrislerinin saklanması $O(N)$ VRAM büyümesine yol açar ve çok uzun bağlamlarda (context) Out-of-Memory hatası verir.
+**Qwen 3.5 Pratiği:** Qwen 3.5, klasik MHA KV Cache sorununun önüne geçmek için mimarisinin %75'ini (3/4 oranında) **Gated DeltaNet** ile değiştirmiştir. Bu sayede 120.000 tokenlık bir bağlamda 50 GB RAM yerine sadece ~12 GB RAM tüketir.
+
+## 2. GQA (Grouped-Query Attention) Kullanımı
+**Bölüm 4 Teori:** Her Q başlığına ayrı K,V atamak yerine, Query başlıklarını gruplayarak ortak K ve V kullandırmak. Kaliteyi korurken VRAM tüketimini %75'e kadar düşürür.
+**Qwen 3.5 Pratiği:** Qwen 3.5, mimarisindeki **"Full Attention"** (Tam Dikkat) katmanlarında (her 4 katmandan 1'i) doğrudan **GQA** kullanır. Ancak Qwen 3.5 sadece GQA kullanmakla kalmaz, üzerine bir de "Gated Q Projection" ekleyerek dikkat hesaplamasını bir Sigmoid ($\sigma$) kapısıyla ağırlıklandırır. `num_kv_groups = 2` ayarı ile anahtar-değer sayısını büyük oranda baskılar.
+
+## 3. Gated DeltaNet (Linear Attention)
+**Bölüm 4 Teori:** $O(N^2)$ (Karesel) matris çarpım krizini çözmek için geçmişi devasa bir matriste değil, sabit boyutlu bir "Durum (State)" değişkenine sıkıştırma mantığı. VRAM kullanımını $O(1)$ sabit seviyeye, hesaplama hızını $O(N)$ doğrusal seviyeye çeker.
+**Qwen 3.5 Pratiği:** Qwen 3.5'in asıl "gizli sosu" budur. Katmanlarının %75'inde (3:1 oranındaki ilk 3 katmanda) **Gated DeltaNet** kullanır. Bölüm 4'te belirtilen "Uzak geçmişi hatırlama kaybı" dezavantajını yenmek için, saf (All-DeltaNet) bir model yapmak yerine aralara GQA serpiştirilmiş hibrit bir yapı tercih etmiştir.
+
+## 4. RMSNorm (Root Mean Square Normalization)
+**Bölüm 4 Teori:** Klasik LayerNorm'daki ortalama (mean) ve sapma (variance) yerine, sadece verinin büyüklüğüne (RMS) odaklanarak bias terimsiz çalışan, hesaplamayı %5-10 hızlandıran katman normalizasyonu.
+**Qwen 3.5 Pratiği:** Qwen 3.5 kodu ([qwen3.5.ipynb](file:///C:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch05/16_qwen3.5/qwen3.5.ipynb)) incelendiğinde, her katman girişinde ve çıkışında doğrudan [RMSNorm(emb_dim, eps=... )](file:///C:/Users/kurtar/Desktop/Sebastian%20rashgca/LLMs-from-scratch/ch05/16_qwen3.5/qwen3_5_transformers.py#48-64) sınıfının kullanıldığı görülmektedir.
+
+## Karşılaştırma Özeti Tablosu
+
+| Bölüm 4 Optimizasyon Tekniği | Qwen 3.5 İçin Konumu ve Uygulama Şekli | Entegre Edilme Sebebi |
+| :--- | :--- | :--- |
+| **Gated DeltaNet** | **KULLANILIYOR** (Kritik Merkez). Mimari katmanların %75'i DeltaNet'ten oluşur. | KV Cache'i sabit tutmak ve sonsuz context length yaratmak. |
+| **GQA (Grouped-Query Attention)** | **KULLANILIYOR**. Katmanların geri kalan %25'i Tam Dikkat yerine GQA tabanlıdır. | DeltaNet'in uzak bağlamı kaçırma (unutma) dezavantajını kapatırken VRAM'i şişirmemek. |
+| **RMSNorm** | **KULLANILIYOR**. Tüm katman önlerinde ve sonralarında aktiftir. | GPU hesaplama sürelerini mikrosaniye bazında kısaltıp inference hızını maksimize etmek. |
+| **FlashAttention** | **DOLAYLI / OPSİYONEL**. Pytorch/Huggingface backend entegrasyonu ile uyumlu donanımlarda açılabilir. | GPU donanımında IO darboğazını MHA/GQA katmanlarında önlemek. |
+| **MLA (Multi-Head Latent)** | KULLANILMIYOR. | DeepSeek altyapısına özeldir; Qwen ekibi GQA + DeltaNet hibritine yönelmiştir. |
+| **SWA (Sliding Window)** | KULLANILMIYOR. | Qwen 3.5, "Pencere kaydırmak" yerine DeltaNet ile lokaliteyi "Causal Conv1D" katmanlarıyla kendi içinde dinamik çözer. |
+
+---
+
+## Sonuç: Qwen 3.5 Modern Teknolojilerin Nasıl Harmanlandığının Zirvesidir
+
+Bölüm 4'teki teorik dosyada tek tek anlatılan her optimizasyonun (GQA, DeltaNet, KV-Cache optimizasyonu, RMSNorm), Qwen 3.5 kodunda tam olarak karşılığı vardır. 
+
+Qwen 3.5'in 9B parametreli görece "küçük" bir model olmasına rağmen, kendinden kat kat büyük GPT-OSS 120B modelini GPQA testlerinde geçebilmesinin nedeni, **tek bir optimizasyonu kullanmak yerine en uyumlu 3 tekniği aynı potada sentezlemesidir** (GQA + RMSNorm + Gated DeltaNet Hibriti).
