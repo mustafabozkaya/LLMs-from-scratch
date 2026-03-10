@@ -29,7 +29,12 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-llms-from-scratch = { workspace = true }
+llms-from-scratch = { workspace = true, editable = true }
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
 
 [dependency-groups]
 dev = [
@@ -37,6 +42,7 @@ dev = [
     "twine>=6.1.0",
     "tokenizers>=0.22.0",
     "safetensors>=0.6.2",
+    "llms-from-scratch",
 ]
 bonus = [
     "blobfile>=3.0.0",
